@@ -1,0 +1,58 @@
+{{/*
+Expand the name of the chart.
+*/}}
+{{- define "healthtrack.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create a default fully qualified app name.
+*/}}
+{{- define "healthtrack.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- printf "%s" $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create chart label.
+*/}}
+{{- define "healthtrack.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Common labels.
+*/}}
+{{- define "healthtrack.labels" -}}
+helm.sh/chart: {{ include "healthtrack.chart" . }}
+{{ include "healthtrack.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: healthtrack
+{{- end }}
+
+{{/*
+Selector labels.
+*/}}
+{{- define "healthtrack.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "healthtrack.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app: web-app
+{{- end }}
+
+{{/*
+ServiceAccount name.
+*/}}
+{{- define "healthtrack.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "healthtrack.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
