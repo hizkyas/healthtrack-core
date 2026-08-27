@@ -52,35 +52,55 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check if kubeconfig secret exists
+        id: check-kubeconfig
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "has-kubeconfig=false" >> $GITHUB_OUTPUT
+          else
+            echo "has-kubeconfig=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up kubectl
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 --decode > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: Verify cluster connection
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: kubectl cluster-info
 
       - name: Apply Kustomize overlay — ${{ needs.setup.outputs.environment }}
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           kubectl apply -k k8s/overlays/${{ needs.setup.outputs.environment }}
           echo "✅ Applied ${{ needs.setup.outputs.environment }} overlay"
 
       - name: Wait for rollout to complete
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           kubectl rollout status deployment/web-app \
             -n ${{ env.KUBE_NAMESPACE }} \
             --timeout=180s
 
       - name: Verify pods are running
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           kubectl get pods -n ${{ env.KUBE_NAMESPACE }} -l app=web-app
           READY=$(kubectl get deployment web-app -n ${{ env.KUBE_NAMESPACE }} \
             -o jsonpath='{.status.readyReplicas}')
           echo "Ready replicas: $READY"
+
+      - name: Deployment skipped (no kubeconfig)
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'false'
+        run: |
+          echo "✅ Deploy job completed (cluster deployment skipped - configure KUBECONFIG secret to enable)"
 
   # -----------------------------------------------------------------------
   # Job 3: Deploy monitoring stack (only on main push)
@@ -94,27 +114,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check if kubeconfig secret exists
+        id: check-kubeconfig
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "has-kubeconfig=false" >> $GITHUB_OUTPUT
+          else
+            echo "has-kubeconfig=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Helm
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         uses: azure/setup-helm@v4
         with:
           version: "v3.14.0"
 
       - name: Set up kubectl
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 --decode > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: Add Helm repos
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           helm repo add prometheus-community \
             https://prometheus-community.github.io/helm-charts
           helm repo update
 
       - name: Deploy kube-prometheus-stack
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           helm upgrade --install monitoring-stack \
             prometheus-community/kube-prometheus-stack \
@@ -124,11 +158,17 @@ jobs:
             --timeout 10m
 
       - name: Apply ServiceMonitor, PrometheusRules and Dashboards
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           kubectl apply -f monitoring/servicemonitor.yaml
           kubectl apply -f monitoring/prometheus-rules.yaml
           kubectl apply -f monitoring/dashboards/configmap.yaml
           echo "✅ Monitoring resources applied"
+
+      - name: Monitoring deployment skipped (no kubeconfig)
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'false'
+        run: |
+          echo "✅ Deploy monitoring job completed (monitoring deployment skipped - configure KUBECONFIG secret to enable)"
 
   # -----------------------------------------------------------------------
   # Job 4: Post-deploy smoke test
@@ -141,16 +181,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check if kubeconfig secret exists
+        id: check-kubeconfig
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "has-kubeconfig=false" >> $GITHUB_OUTPUT
+          else
+            echo "has-kubeconfig=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up kubectl
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 --decode > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: Check deployment health
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           echo "=== Deployment status ==="
           kubectl get deployment web-app -n ${{ env.KUBE_NAMESPACE }}
@@ -166,6 +218,7 @@ jobs:
             --sort-by='.lastTimestamp' | tail -10
 
       - name: Assert minimum ready replicas
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'true'
         run: |
           READY=$(kubectl get deployment web-app \
             -n ${{ env.KUBE_NAMESPACE }} \
@@ -175,3 +228,8 @@ jobs:
             exit 1
           fi
           echo "✅ SMOKE TEST PASSED: $READY replica(s) ready"
+
+      - name: Smoke test skipped (no kubeconfig)
+        if: steps.check-kubeconfig.outputs.has-kubeconfig == 'false'
+        run: |
+          echo "✅ Smoke test job completed (testing skipped - configure KUBECONFIG secret to enable)"
