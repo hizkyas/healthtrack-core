@@ -1,0 +1,120 @@
+name: CI — Lint & Validate
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "fix/**"
+      - "chore/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Validate Kubernetes manifests with kubeconform
+  # -----------------------------------------------------------------------
+  kubeconform:
+    name: Kubeconform — Manifest Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSLo kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Validate base manifests
+        run: |
+          kubeconform \
+            -strict \
+            -summary \
+            -schema-location default \
+            -ignore-missing-schemas \
+            k8s/base/namespace.yaml \
+            k8s/base/deployment.yaml \
+            k8s/base/service.yaml \
+            k8s/base/hpa.yaml \
+            k8s/base/pdb.yaml \
+            k8s/base/rbac.yaml \
+            k8s/base/ingress.yaml \
+            k8s/base/postgres/pvc.yaml \
+            k8s/base/postgres/statefulset.yaml \
+            k8s/base/postgres/service.yaml
+
+  # -----------------------------------------------------------------------
+  # Job 2: Lint Helm chart
+  # -----------------------------------------------------------------------
+  helm-lint:
+    name: Helm — Chart Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
+
+      - name: Lint HealthTrack chart (default values)
+        run: helm lint ./charts/healthtrack
+
+      - name: Lint HealthTrack chart (ingress enabled)
+        run: |
+          helm lint ./charts/healthtrack \
+            --set ingress.enabled=true \
+            --set ingress.hosts[0].host=healthtrack.example.com \
+            --set ingress.hosts[0].paths[0].path=/ \
+            --set ingress.hosts[0].paths[0].pathType=Prefix
+
+      - name: Helm template render (dry-run)
+        run: |
+          helm template healthtrack ./charts/healthtrack \
+            --namespace sample-app \
+            --debug
+
+  # -----------------------------------------------------------------------
+  # Job 3: Kustomize build validation
+  # -----------------------------------------------------------------------
+  kustomize-build:
+    name: Kustomize — Build Overlays
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        overlay: [dev, staging, production]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl (includes kustomize)
+        uses: azure/setup-kubectl@v4
+
+      - name: Build ${{ matrix.overlay }} overlay
+        run: |
+          kubectl kustomize k8s/overlays/${{ matrix.overlay }}
+          echo "✅ ${{ matrix.overlay }} overlay builds successfully"
+
+  # -----------------------------------------------------------------------
+  # Job 4: YAML lint
+  # -----------------------------------------------------------------------
+  yaml-lint:
+    name: YAML — Lint all YAML files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint \
+            -d '{extends: relaxed, rules: {line-length: {max: 160}}}' \
+            k8s/ monitoring/ charts/healthtrack/

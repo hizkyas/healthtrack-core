@@ -1,0 +1,177 @@
+name: CD — Deploy to Cluster
+
+on:
+  push:
+    branches:
+      - main
+  # Allow manual trigger with environment selection
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (dev | staging | production)"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+env:
+  KUBE_NAMESPACE: sample-app
+  MONITORING_NAMESPACE: monitoring
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Determine deployment environment
+  # -----------------------------------------------------------------------
+  setup:
+    name: Setup — Determine environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - name: Set environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+  # -----------------------------------------------------------------------
+  # Job 2: Deploy application via Kustomize
+  # -----------------------------------------------------------------------
+  deploy:
+    name: Deploy — ${{ needs.setup.outputs.environment }}
+    runs-on: ubuntu-latest
+    needs: setup
+    environment: ${{ needs.setup.outputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 --decode > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connection
+        run: kubectl cluster-info
+
+      - name: Apply Kustomize overlay — ${{ needs.setup.outputs.environment }}
+        run: |
+          kubectl apply -k k8s/overlays/${{ needs.setup.outputs.environment }}
+          echo "✅ Applied ${{ needs.setup.outputs.environment }} overlay"
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/web-app \
+            -n ${{ env.KUBE_NAMESPACE }} \
+            --timeout=180s
+
+      - name: Verify pods are running
+        run: |
+          kubectl get pods -n ${{ env.KUBE_NAMESPACE }} -l app=web-app
+          READY=$(kubectl get deployment web-app -n ${{ env.KUBE_NAMESPACE }} \
+            -o jsonpath='{.status.readyReplicas}')
+          echo "Ready replicas: $READY"
+
+  # -----------------------------------------------------------------------
+  # Job 3: Deploy monitoring stack (only on main push)
+  # -----------------------------------------------------------------------
+  deploy-monitoring:
+    name: Deploy — Monitoring Stack
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 --decode > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Add Helm repos
+        run: |
+          helm repo add prometheus-community \
+            https://prometheus-community.github.io/helm-charts
+          helm repo update
+
+      - name: Deploy kube-prometheus-stack
+        run: |
+          helm upgrade --install monitoring-stack \
+            prometheus-community/kube-prometheus-stack \
+            --namespace ${{ env.MONITORING_NAMESPACE }} \
+            --create-namespace \
+            --wait \
+            --timeout 10m
+
+      - name: Apply ServiceMonitor, PrometheusRules and Dashboards
+        run: |
+          kubectl apply -f monitoring/servicemonitor.yaml
+          kubectl apply -f monitoring/prometheus-rules.yaml
+          kubectl apply -f monitoring/dashboards/configmap.yaml
+          echo "✅ Monitoring resources applied"
+
+  # -----------------------------------------------------------------------
+  # Job 4: Post-deploy smoke test
+  # -----------------------------------------------------------------------
+  smoke-test:
+    name: Smoke Test — Verify deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 --decode > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Check deployment health
+        run: |
+          echo "=== Deployment status ==="
+          kubectl get deployment web-app -n ${{ env.KUBE_NAMESPACE }}
+
+          echo "=== Pod status ==="
+          kubectl get pods -n ${{ env.KUBE_NAMESPACE }} -l app=web-app
+
+          echo "=== HPA status ==="
+          kubectl get hpa -n ${{ env.KUBE_NAMESPACE }}
+
+          echo "=== Events (last 10) ==="
+          kubectl get events -n ${{ env.KUBE_NAMESPACE }} \
+            --sort-by='.lastTimestamp' | tail -10
+
+      - name: Assert minimum ready replicas
+        run: |
+          READY=$(kubectl get deployment web-app \
+            -n ${{ env.KUBE_NAMESPACE }} \
+            -o jsonpath='{.status.readyReplicas}')
+          if [ -z "$READY" ] || [ "$READY" -lt 1 ]; then
+            echo "❌ SMOKE TEST FAILED: No ready replicas!"
+            exit 1
+          fi
+          echo "✅ SMOKE TEST PASSED: $READY replica(s) ready"
