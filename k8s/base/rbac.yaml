@@ -1,0 +1,43 @@
+# ServiceAccount for web-app with no auto-mounted token
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: web-app-sa
+  namespace: sample-app
+  labels:
+    app: web-app
+    app.kubernetes.io/part-of: healthtrack
+automountServiceAccountToken: false
+---
+# Role: only allow reading its own pod info (least-privilege)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: web-app-role
+  namespace: sample-app
+  labels:
+    app.kubernetes.io/part-of: healthtrack
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+---
+# Bind the Role to the ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: web-app-rolebinding
+  namespace: sample-app
+  labels:
+    app.kubernetes.io/part-of: healthtrack
+subjects:
+- kind: ServiceAccount
+  name: web-app-sa
+  namespace: sample-app
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: web-app-role
