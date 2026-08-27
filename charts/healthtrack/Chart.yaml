@@ -1,0 +1,13 @@
+apiVersion: v2
+name: healthtrack
+description: HealthTrack Core — production-grade Kubernetes application chart
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - healthtrack
+  - nginx
+  - kubernetes
+maintainers:
+  - name: Hizkyas Tadele
+    email: hizkyastadele@gmail.com
