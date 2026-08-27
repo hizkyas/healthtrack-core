@@ -1,0 +1,58 @@
+# Default deny-all ingress and egress for sample-app namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: sample-app
+  labels:
+    app.kubernetes.io/part-of: healthtrack
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# Allow HTTP traffic into web-app pods on port 80
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-app-ingress
+  namespace: sample-app
+  labels:
+    app.kubernetes.io/part-of: healthtrack
+spec:
+  podSelector:
+    matchLabels:
+      app: web-app
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 80
+---
+# Allow web-app pods to reach DNS (kube-dns) and external services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-app-egress
+  namespace: sample-app
+  labels:
+    app.kubernetes.io/part-of: healthtrack
+spec:
+  podSelector:
+    matchLabels:
+      app: web-app
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

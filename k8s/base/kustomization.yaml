@@ -9,6 +9,8 @@ resources:
   - service.yaml
   - hpa.yaml
   - pdb.yaml
+  - rbac.yaml
+  - networkpolicy.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: healthtrack
