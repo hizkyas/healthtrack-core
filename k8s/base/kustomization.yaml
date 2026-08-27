@@ -11,6 +11,7 @@ resources:
   - pdb.yaml
   - rbac.yaml
   - networkpolicy.yaml
+  - ingress.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: healthtrack
