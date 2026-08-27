@@ -12,6 +12,10 @@ resources:
   - rbac.yaml
   - networkpolicy.yaml
   - ingress.yaml
+  - postgres/secret.yaml
+  - postgres/pvc.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: healthtrack

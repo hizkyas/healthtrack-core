@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: sample-app
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: healthtrack
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet DNS resolution
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: postgres
