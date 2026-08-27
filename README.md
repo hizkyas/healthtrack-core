@@ -198,3 +198,7 @@ make lint               # Run Helm lint + kubeconform
 make teardown           # Delete all resources
 make clean              # Remove local artifacts
 ```
+
+---
+
+> Last validated: 2026-08-27 — CI pipeline green ✅
