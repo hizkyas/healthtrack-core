@@ -4,8 +4,6 @@ kind: Kustomization
 resources:
   - ../../base
 
-namespace: sample-app
-
 patches:
   - patch: |-
       - op: replace
@@ -15,5 +13,7 @@ patches:
       kind: Deployment
       name: web-app
 
-commonLabels:
-  environment: staging
+labels:
+  - pairs:
+      environment: staging
+    includeSelectors: false

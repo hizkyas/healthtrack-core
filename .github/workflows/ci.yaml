@@ -34,14 +34,15 @@ jobs:
           kubeconform \
             -strict \
             -summary \
-            -schema-location default \
             -ignore-missing-schemas \
+            -schema-location default \
             k8s/base/namespace.yaml \
             k8s/base/deployment.yaml \
             k8s/base/service.yaml \
             k8s/base/hpa.yaml \
             k8s/base/pdb.yaml \
             k8s/base/rbac.yaml \
+            k8s/base/networkpolicy.yaml \
             k8s/base/ingress.yaml \
             k8s/base/postgres/pvc.yaml \
             k8s/base/postgres/statefulset.yaml \
@@ -69,15 +70,14 @@ jobs:
         run: |
           helm lint ./charts/healthtrack \
             --set ingress.enabled=true \
-            --set ingress.hosts[0].host=healthtrack.example.com \
-            --set ingress.hosts[0].paths[0].path=/ \
-            --set ingress.hosts[0].paths[0].pathType=Prefix
+            --set "ingress.hosts[0].host=healthtrack.example.com" \
+            --set "ingress.hosts[0].paths[0].path=/" \
+            --set "ingress.hosts[0].paths[0].pathType=Prefix"
 
       - name: Helm template render (dry-run)
         run: |
           helm template healthtrack ./charts/healthtrack \
-            --namespace sample-app \
-            --debug
+            --namespace sample-app
 
   # -----------------------------------------------------------------------
   # Job 3: Kustomize build validation
@@ -101,7 +101,7 @@ jobs:
           echo "✅ ${{ matrix.overlay }} overlay builds successfully"
 
   # -----------------------------------------------------------------------
-  # Job 4: YAML lint
+  # Job 4: YAML lint — only .yaml files, skip generated/template files
   # -----------------------------------------------------------------------
   yaml-lint:
     name: YAML — Lint all YAML files
@@ -113,8 +113,10 @@ jobs:
       - name: Install yamllint
         run: pip install yamllint
 
-      - name: Run yamllint
+      - name: Run yamllint on YAML files only
         run: |
-          yamllint \
-            -d '{extends: relaxed, rules: {line-length: {max: 160}}}' \
-            k8s/ monitoring/ charts/healthtrack/
+          find k8s/ monitoring/ .github/ charts/healthtrack/ \
+            -name "*.yaml" -o -name "*.yml" | \
+            grep -v "_helpers" | \
+            xargs yamllint \
+              -d '{extends: relaxed, rules: {line-length: {max: 160}, truthy: {allowed-values: ["true", "false", "on"]}}}'
