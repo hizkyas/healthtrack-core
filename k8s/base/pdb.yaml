@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-app-pdb
+  namespace: sample-app
+  labels:
+    app: web-app
+    app.kubernetes.io/part-of: healthtrack
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: web-app

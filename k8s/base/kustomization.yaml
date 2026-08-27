@@ -7,6 +7,8 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
+  - hpa.yaml
+  - pdb.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: healthtrack
