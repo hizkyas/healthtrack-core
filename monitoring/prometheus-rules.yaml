@@ -1,0 +1,138 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: web-app-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring-stack
+    app.kubernetes.io/part-of: healthtrack
+spec:
+  groups:
+
+  - name: web-app.availability
+    interval: 30s
+    rules:
+
+    - alert: WebAppPodCrashLooping
+      expr: |
+        rate(kube_pod_container_status_restarts_total{
+          namespace="sample-app",
+          container="nginx"
+        }[5m]) * 60 > 0
+      for: 2m
+      labels:
+        severity: critical
+        team: healthtrack
+      annotations:
+        summary: "Pod {{ $labels.pod }} is crash-looping"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} has restarted more than once in the last 5 minutes."
+        runbook_url: "https://github.com/hizkyas/healthtrack-core/wiki/runbooks/crash-looping"
+
+    - alert: WebAppDeploymentUnavailable
+      expr: |
+        kube_deployment_status_replicas_unavailable{
+          namespace="sample-app",
+          deployment="web-app"
+        } > 0
+      for: 5m
+      labels:
+        severity: warning
+        team: healthtrack
+      annotations:
+        summary: "web-app Deployment has unavailable replicas"
+        description: "{{ $value }} replica(s) of web-app are unavailable for more than 5 minutes."
+
+    - alert: WebAppPodsNotReady
+      expr: |
+        kube_pod_status_ready{
+          namespace="sample-app",
+          condition="true"
+        } == 0
+      for: 3m
+      labels:
+        severity: critical
+        team: healthtrack
+      annotations:
+        summary: "No ready pods for web-app"
+        description: "All pods in sample-app namespace have been not-ready for 3 minutes."
+
+  - name: web-app.resources
+    interval: 60s
+    rules:
+
+    - alert: WebAppHighCPUUsage
+      expr: |
+        sum(rate(container_cpu_usage_seconds_total{
+          namespace="sample-app",
+          container="nginx"
+        }[5m])) by (pod)
+        /
+        sum(kube_pod_container_resource_limits{
+          namespace="sample-app",
+          container="nginx",
+          resource="cpu"
+        }) by (pod) > 0.85
+      for: 5m
+      labels:
+        severity: warning
+        team: healthtrack
+      annotations:
+        summary: "High CPU usage on {{ $labels.pod }}"
+        description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its CPU limit."
+
+    - alert: WebAppHighMemoryUsage
+      expr: |
+        container_memory_working_set_bytes{
+          namespace="sample-app",
+          container="nginx"
+        }
+        /
+        kube_pod_container_resource_limits{
+          namespace="sample-app",
+          container="nginx",
+          resource="memory"
+        } > 0.85
+      for: 5m
+      labels:
+        severity: warning
+        team: healthtrack
+      annotations:
+        summary: "High memory usage on {{ $labels.pod }}"
+        description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its memory limit."
+
+    - alert: WebAppOOMKilled
+      expr: |
+        kube_pod_container_status_last_terminated_reason{
+          namespace="sample-app",
+          reason="OOMKilled"
+        } == 1
+      for: 0m
+      labels:
+        severity: critical
+        team: healthtrack
+      annotations:
+        summary: "Pod {{ $labels.pod }} was OOMKilled"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was killed due to out-of-memory. Consider increasing memory limits."
+
+  - name: web-app.scaling
+    interval: 60s
+    rules:
+
+    - alert: WebAppHPAMaxReplicas
+      expr: |
+        kube_horizontalpodautoscaler_status_current_replicas{
+          namespace="sample-app",
+          horizontalpodautoscaler="web-app-hpa"
+        }
+        ==
+        kube_horizontalpodautoscaler_spec_max_replicas{
+          namespace="sample-app",
+          horizontalpodautoscaler="web-app-hpa"
+        }
+      for: 10m
+      labels:
+        severity: warning
+        team: healthtrack
+      annotations:
+        summary: "web-app HPA is at maximum replicas"
+        description: "The HPA for web-app has been at max replicas ({{ $value }}) for 10 minutes. Consider raising maxReplicas or optimizing the application."
